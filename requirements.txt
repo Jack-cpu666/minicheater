@@ -3,6 +3,9 @@ fastapi
 uvicorn
 python-multipart
 mss
-opencv-python
+# Change this line:
+# opencv-python
+# To this:
+opencv-python-headless
 numpy
 websocket-client
