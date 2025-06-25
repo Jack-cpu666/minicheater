@@ -1,125 +1,152 @@
-import os
 from flask import Flask, render_template_string
-from flask_socketio import SocketIO
+from flask_socketio import SocketIO, emit
+import base64
+from PIL import Image
+import io
+import os
 
-# --- Flask App Setup ---
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'a_very_secret_key') 
-socketio = SocketIO(app, async_mode='eventlet')
+app.config['SECRET_KEY'] = 'your-secret-key-here'
+socketio = SocketIO(app, cors_allowed_origins="*")
 
-# This will store the latest frame data in memory
-latest_frame = {
-    'data': None,
-    'width': 0,
-    'height': 0
-}
+# Store the latest frame
+latest_frame = None
 
-# --- HTML & JavaScript Template (No changes here) ---
-INDEX_HTML = """
+# HTML template
+HTML_TEMPLATE = '''
 <!DOCTYPE html>
 <html>
 <head>
-    <title>1 FPS Raw Stream</title>
+    <title>1 FPS Screen Stream</title>
     <style>
-        body { font-family: sans-serif; background-color: #222; color: #eee; text-align: center; margin-top: 20px; }
-        h1 { color: #00aaff; }
-        #status { margin: 10px; font-style: italic; color: #999; }
-        canvas { background-color: #000; border: 2px solid #555; }
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #000;
+            color: #fff;
+            text-align: center;
+        }
+        #screen {
+            max-width: 100%;
+            max-height: 80vh;
+            border: 2px solid #333;
+            margin: 20px auto;
+            display: block;
+        }
+        .status {
+            margin: 10px;
+            padding: 10px;
+            background: #333;
+            border-radius: 5px;
+        }
+        .connected { color: #0f0; }
+        .disconnected { color: #f00; }
     </style>
 </head>
 <body>
-    <h1>1 FPS Raw Data Stream</h1>
-    <p id="status">Connecting to server...</p>
-    <canvas id="video-canvas"></canvas>
-
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <h1>1 FPS Screen Stream</h1>
+    <div id="status" class="status disconnected">Waiting for connection...</div>
+    <img id="screen" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" alt="No stream">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', (event) => {
-            const canvas = document.getElementById('video-canvas');
-            const ctx = canvas.getContext('2d');
-            const status = document.getElementById('status');
-
-            const socket = io();
-
-            socket.on('connect', () => {
-                status.textContent = 'Connected! Waiting for stream to start...';
-                console.log('Connected to server.');
-            });
-
-            socket.on('disconnect', () => {
-                status.textContent = 'Disconnected from server.';
-                console.log('Disconnected.');
-            });
-            
-            socket.on('new_frame', (frame) => {
-                if (!frame || !frame.data) return;
-
-                status.textContent = `Streaming... (Frame dimensions: ${frame.width}x${frame.height})`;
+        const socket = io();
+        const screenImg = document.getElementById('screen');
+        const status = document.getElementById('status');
+        
+        socket.on('connect', function() {
+            status.textContent = 'Connected - Waiting for stream...';
+            status.className = 'status connected';
+        });
+        
+        socket.on('disconnect', function() {
+            status.textContent = 'Disconnected';
+            status.className = 'status disconnected';
+        });
+        
+        socket.on('screen_data', function(data) {
+            try {
+                // Convert raw data to image
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
                 
-                if (canvas.width !== frame.width || canvas.height !== frame.height) {
-                    canvas.width = frame.width;
-                    canvas.height = frame.height;
-                }
-
-                const imageData = ctx.createImageData(frame.width, frame.height);
-                const receivedData = new Uint8ClampedArray(frame.data);
-
-                for (let i = 0; i < receivedData.length; i += 4) {
-                    imageData.data[i] = receivedData[i+2];     // Red
-                    imageData.data[i+1] = receivedData[i+1];   // Green
-                    imageData.data[i+2] = receivedData[i];     // Blue
-                    imageData.data[i+3] = receivedData[i+3];   // Alpha
+                canvas.width = data.width;
+                canvas.height = data.height;
+                
+                const imageData = ctx.createImageData(data.width, data.height);
+                const rawData = new Uint8Array(atob(data.pixels).split('').map(char => char.charCodeAt(0)));
+                
+                for (let i = 0; i < rawData.length; i += 3) {
+                    const pixelIndex = (i / 3) * 4;
+                    imageData.data[pixelIndex] = rawData[i];     // R
+                    imageData.data[pixelIndex + 1] = rawData[i + 1]; // G
+                    imageData.data[pixelIndex + 2] = rawData[i + 2]; // B
+                    imageData.data[pixelIndex + 3] = 255;        // A
                 }
                 
                 ctx.putImageData(imageData, 0, 0);
-            });
+                screenImg.src = canvas.toDataURL();
+                
+                status.textContent = `Streaming - ${data.width}x${data.height}`;
+                status.className = 'status connected';
+            } catch (error) {
+                console.error('Error processing frame:', error);
+            }
+        });
+        
+        socket.on('frame_update', function(data) {
+            screenImg.src = 'data:image/png;base64,' + data.image;
+            status.textContent = `Streaming - ${data.width}x${data.height}`;
+            status.className = 'status connected';
         });
     </script>
 </body>
 </html>
-"""
-
-# --- Server Routes and SocketIO Events ---
+'''
 
 @app.route('/')
 def index():
-    """Serves the main HTML page."""
-    return render_template_string(INDEX_HTML)
+    return render_template_string(HTML_TEMPLATE)
 
 @socketio.on('connect')
 def handle_connect():
-    """A new web browser client connected."""
-    print('Web client connected')
-    if latest_frame['data']:
-        socketio.emit('new_frame', latest_frame)
-
-# --- vvv THIS FUNCTION IS UPDATED vvv ---
-@socketio.on('stream_frame')
-def handle_stream_frame(metadata, frame_bytes):
-    """
-    This event is called by pcapp.py. It now receives two arguments:
-    1. metadata (a JSON dictionary with width/height)
-    2. frame_bytes (the raw binary pixel data)
-    """
-    # Re-assemble the data into a single package for the browser
-    frame_packet = {
-        'width': metadata['width'],
-        'height': metadata['height'],
-        'data': frame_bytes
-    }
-    
-    # Update the latest frame in memory
-    global latest_frame
-    latest_frame = frame_packet
-    
-    # Broadcast the complete package to all connected web clients
-    socketio.emit('new_frame', frame_packet)
-# --- ^^^ THIS FUNCTION IS UPDATED ^^^ ---
+    print('Client connected')
+    emit('status', {'message': 'Connected to server'})
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    print('A client disconnected')
+    print('Client disconnected')
+
+@socketio.on('screen_frame')
+def handle_screen_frame(data):
+    """Handle incoming screen frame data from PC client"""
+    try:
+        # Convert raw RGB data to PNG image
+        width = data['width']
+        height = data['height']
+        raw_data = base64.b64decode(data['pixels'])
+        
+        # Create PIL Image from raw RGB data
+        img = Image.frombytes('RGB', (width, height), raw_data)
+        
+        # Convert to PNG and encode as base64
+        img_buffer = io.BytesIO()
+        img.save(img_buffer, format='PNG')
+        img_base64 = base64.b64encode(img_buffer.getvalue()).decode()
+        
+        # Broadcast to all connected web clients
+        socketio.emit('frame_update', {
+            'image': img_base64,
+            'width': width,
+            'height': height
+        })
+        
+        print(f"Frame processed: {width}x{height}")
+        
+    except Exception as e:
+        print(f"Error processing frame: {e}")
 
 if __name__ == '__main__':
-    print("Starting local server at http://127.0.0.1:5000")
-    socketio.run(app, debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    socketio.run(app, host='0.0.0.0', port=port, debug=False)
