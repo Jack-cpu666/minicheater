@@ -4,7 +4,6 @@ from flask_socketio import SocketIO
 
 # --- Flask App Setup ---
 app = Flask(__name__)
-# It's good practice to have a secret key, though not strictly necessary for this simple app.
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'a_very_secret_key') 
 socketio = SocketIO(app, async_mode='eventlet')
 
@@ -15,8 +14,7 @@ latest_frame = {
     'height': 0
 }
 
-# --- HTML & JavaScript Template ---
-# All the frontend code is embedded here for simplicity.
+# --- HTML & JavaScript Template (No changes here) ---
 INDEX_HTML = """
 <!DOCTYPE html>
 <html>
@@ -34,7 +32,6 @@ INDEX_HTML = """
     <p id="status">Connecting to server...</p>
     <canvas id="video-canvas"></canvas>
 
-    <!-- We need the Socket.IO client library -->
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', (event) => {
@@ -42,7 +39,6 @@ INDEX_HTML = """
             const ctx = canvas.getContext('2d');
             const status = document.getElementById('status');
 
-            // Connect to the same server that served this page
             const socket = io();
 
             socket.on('connect', () => {
@@ -55,20 +51,16 @@ INDEX_HTML = """
                 console.log('Disconnected.');
             });
             
-            // This is the main event listener that receives new frames
             socket.on('new_frame', (frame) => {
                 if (!frame || !frame.data) return;
 
                 status.textContent = `Streaming... (Frame dimensions: ${frame.width}x${frame.height})`;
                 
-                // Set canvas dimensions if they've changed
                 if (canvas.width !== frame.width || canvas.height !== frame.height) {
                     canvas.width = frame.width;
                     canvas.height = frame.height;
                 }
 
-                // The raw data from MSS is often BGRA. HTML Canvas needs RGBA.
-                // We must swap the Red and Blue channels.
                 const imageData = ctx.createImageData(frame.width, frame.height);
                 const receivedData = new Uint8ClampedArray(frame.data);
 
@@ -79,7 +71,6 @@ INDEX_HTML = """
                     imageData.data[i+3] = receivedData[i+3];   // Alpha
                 }
                 
-                // Draw the image data to the canvas
                 ctx.putImageData(imageData, 0, 0);
             });
         });
@@ -99,28 +90,36 @@ def index():
 def handle_connect():
     """A new web browser client connected."""
     print('Web client connected')
-    # If a stream is already running, send the last frame immediately
     if latest_frame['data']:
         socketio.emit('new_frame', latest_frame)
 
+# --- vvv THIS FUNCTION IS UPDATED vvv ---
 @socketio.on('stream_frame')
-def handle_stream_frame(frame_data):
+def handle_stream_frame(metadata, frame_bytes):
     """
-    This event is called by our pcapp.py script.
-    It receives the raw frame data and broadcasts it to all web clients.
+    This event is called by pcapp.py. It now receives two arguments:
+    1. metadata (a JSON dictionary with width/height)
+    2. frame_bytes (the raw binary pixel data)
     """
+    # Re-assemble the data into a single package for the browser
+    frame_packet = {
+        'width': metadata['width'],
+        'height': metadata['height'],
+        'data': frame_bytes
+    }
+    
     # Update the latest frame in memory
     global latest_frame
-    latest_frame = frame_data
+    latest_frame = frame_packet
     
-    # Broadcast the new frame to all connected web clients
-    socketio.emit('new_frame', frame_data)
+    # Broadcast the complete package to all connected web clients
+    socketio.emit('new_frame', frame_packet)
+# --- ^^^ THIS FUNCTION IS UPDATED ^^^ ---
 
 @socketio.on('disconnect')
 def handle_disconnect():
     print('A client disconnected')
 
-# This part is for local testing, Render.com will use Gunicorn
 if __name__ == '__main__':
     print("Starting local server at http://127.0.0.1:5000")
     socketio.run(app, debug=True)
