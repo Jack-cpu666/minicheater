@@ -116,6 +116,7 @@ async def get_viewer_page(request: Request):
     <head>
         <title>Screen Viewer</title>
         <style>
+            /* Corrected curly braces for f-string */
             body {{ margin: 0; overflow: hidden; background-color: #000; display: flex; justify-content: center; align-items: center; height: 100vh; }}
             #screenImage {{ max-width: 100%; max-height: 100%; object-fit: contain; }} /* Ensure image fits within view */
             #status {{ color: white; position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.5); padding: 5px; border-radius: 3px; font-family: sans-serif; font-size: 12px; }}
@@ -140,28 +141,29 @@ async def get_viewer_page(request: Request):
                     console.log("WebSocket already open or connecting.");
                     return;
                 }}
-                
+
                 statusElement.textContent = 'Status: Connecting...';
-                console.log(`Attempting to connect to WebSocket: ${{websocketUrl}}`);
+                console.log(`Attempting to connect to WebSocket: ${{websocketUrl}}`); // Already correctly escaped
+
                 ws = new WebSocket(websocketUrl);
 
-                ws.onopen = function(event) {{
+                ws.onopen = function(event) {{ // Already correctly escaped
                     console.log('WebSocket connected');
                     statusElement.textContent = 'Status: Connected';
                     frameCount = 0;
                     startTime = Date.now();
                 }};
 
-                ws.onmessage = function(event) {{
+                ws.onmessage = function(event) {{ // Already correctly escaped
                     // event.data will be a Blob for binary messages
-                    if (event.data instanceof Blob) {{
+                    if (event.data instanceof Blob) {{ // Already correctly escaped
                         frameCount++;
                         const elapsed = (Date.now() - startTime) / 1000;
                         const fps = elapsed > 0 ? frameCount / elapsed : 0;
-                        statusElement.textContent = `Status: Streaming | FPS: ${{fps.toFixed(1)}}`;
+                        statusElement.textContent = `Status: Streaming | FPS: ${{fps.toFixed(1)}}`; // Already correctly escaped
 
                         // Revoke the previous object URL to free memory
-                        if (lastObjectUrl) {{
+                        if (lastObjectUrl) {{ // Already correctly escaped
                             URL.revokeObjectURL(lastObjectUrl);
                         }}
 
@@ -169,20 +171,20 @@ async def get_viewer_page(request: Request):
                         const imageUrl = URL.createObjectURL(event.data);
                         imageElement.src = imageUrl;
                         lastObjectUrl = imageUrl; // Store the new URL
-                    }} else {{
+                    }} else {{ // Already correctly escaped
                         console.warn("Received non-blob data:", event.data);
                     }}
                 }};
 
-                ws.onerror = function(event) {{
+                ws.onerror = function(event) {{ // Already correctly escaped
                     console.error('WebSocket error observed:', event);
                     statusElement.textContent = 'Status: Error';
                 }};
 
-                ws.onclose = function(event) {{
+                ws.onclose = function(event) {{ // Already correctly escaped
                     console.log('WebSocket connection closed:', event);
+                    statusElement.src = ""; // Clear the image
                     statusElement.textContent = 'Status: Disconnected';
-                    imageElement.src = ""; // Clear the image
 
                     // Attempt to reconnect after a delay
                     setTimeout(connectWebSocket, 5000); // Try reconnecting every 5 seconds
@@ -193,11 +195,11 @@ async def get_viewer_page(request: Request):
             connectWebSocket();
 
              // Clean up object URLs on page unload
-            window.addEventListener('beforeunload', function() {{
-                if (lastObjectUrl) {{
+            window.addEventListener('beforeunload', function() {{ // Already correctly escaped
+                if (lastObjectUrl) {{ // Already correctly escaped
                     URL.revokeObjectURL(lastObjectUrl);
                 }}
-                 if (ws) {{
+                 if (ws) {{ // Already correctly escaped
                     ws.close();
                 }}
             }});
