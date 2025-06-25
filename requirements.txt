@@ -1,5 +1,5 @@
-Flask==2.3.3
-Flask-SocketIO==5.3.6
-Pillow==10.0.1
-python-socketio==5.9.0
-eventlet==0.33.3
+# requirements.txt
+Flask
+Flask-SocketIO
+gunicorn
+eventlet
