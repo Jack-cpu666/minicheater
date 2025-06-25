@@ -1,9 +1,17 @@
 # app.py
+
+# --- THE FIX ---
+# This is the most important part. We must perform the monkey-patching
+# for eventlet BEFORE any other libraries (like Flask) are imported.
+import eventlet
+eventlet.monkey_patch()
+# -----------------
+
 from flask import Flask
 from flask_socketio import SocketIO
 
-# We embed the viewer's HTML directly into our Python script.
-# This avoids the need for a separate 'templates' folder.
+# We embed the viewer's HTML directly into our Python script
+# to avoid needing a separate 'templates' folder.
 HTML_CONTENT = """
 <!DOCTYPE html>
 <html lang="en">
@@ -50,7 +58,7 @@ HTML_CONTENT = """
         const socket = io();
         const imageElement = document.getElementById('screen');
         const statusElement = document.getElementById('status');
-        let lastUrl; // To keep track of the previous image URL
+        let lastUrl; // To keep track of the previous image URL for memory management
 
         socket.on('connect', () => {
             statusElement.textContent = 'Connected! Waiting for stream...';
@@ -63,9 +71,9 @@ HTML_CONTENT = """
             const blob = new Blob([data], { type: 'image/jpeg' });
             const url = URL.createObjectURL(blob);
             imageElement.src = url;
-            statusElement.style.display = 'none';
+            statusElement.style.display = 'none'; // Hide status once stream starts
 
-            // Clean up the old URL to prevent memory leaks
+            // Clean up the old URL after the new image is loaded to prevent memory leaks
             imageElement.onload = () => {
                 if (lastUrl) {
                     URL.revokeObjectURL(lastUrl);
@@ -86,7 +94,6 @@ HTML_CONTENT = """
 
 # Initialize Flask and SocketIO
 app = Flask(__name__)
-# 'eventlet' is crucial for production performance on Render
 socketio = SocketIO(app, async_mode='eventlet')
 
 # Main route that serves the HTML page
@@ -111,4 +118,5 @@ def handle_disconnect():
 
 # This part is not used by Render's Gunicorn, but it's good for local testing
 if __name__ == '__main__':
+    # Note: The monkey_patch() is still needed for local testing to work correctly.
     socketio.run(app, debug=True)
